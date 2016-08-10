@@ -1,4 +1,6 @@
 import User from '../models/user';
+import Promise from 'bluebird';
+import APIError from '../../server/helpers/APIError';
 
 /**
  * Load user and append to req.
@@ -6,14 +8,10 @@ import User from '../models/user';
 function load(req, res, next, username) {
   User.getByUsername(username).then((user) => {
     if (!user) {
-      user = new User({
-        username: username,
-        locations: []
-      })
+      const error = new APIError('no such user exists', 400, true);
+      return next(error);
     }
-    return user.saveAsync()
-  }).then(function (savedUser) {
-    req.user = savedUser;		// eslint-disable-line no-param-reassign
+    req.user = user;		// eslint-disable-line no-param-reassign
     return next();
   }).error((e) => next(e));
 }
@@ -50,4 +48,42 @@ function addLocation(req, res, next) {
     .error((e) => next(e));
 }
 
-export default { load, getLocation, addLocation };
+function deleteLocation (req, res, next) {
+  const { locationId } = req.body;
+  const user = req.user;
+  let locations = user.locations;
+
+  console.log('deleteId', locationId);
+
+  locations = locations.filter(function (location) {
+    console.log('comparing with', location._id.toString())
+    return location._id.toString() != locationId
+  })
+  user.locations = locations
+  user.saveAsync()
+    .then(function (savedUser) {
+      return res.json(savedUser)
+    })
+    .error((e) => next(e));
+}
+
+function createUser (req, res, next) {
+  const { username, password } = req.body;
+  User.getByUsername(username).then((user) => {
+    if (!user) {
+      user = new User({
+        username: username,
+        password: password,
+        locations: []
+      })
+    } else if (user.password != password) {
+      const error = new APIError('Invalid password', 400, true);
+      return Promise.reject(error)
+    }
+    return user.saveAsync()
+  }).then(function (savedUser) {
+    return res.json(savedUser)
+  }).error((e) => next(e));
+}
+
+export default { load, createUser, getLocation, addLocation, deleteLocation };
